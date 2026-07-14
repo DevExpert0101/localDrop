@@ -1,0 +1,26 @@
+{
+  "name": "localdrop",
+  "version": "1.0.0",
+  "description": "Private file tools — processed locally in your browser",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:api": "node scripts/dev-api.mjs",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node test-browser.mjs",
+    "test:api": "node test-api.mjs",
+    "test:all": "node test-api.mjs && node test-browser.mjs",
+    "simulate": "node simulate-payment.mjs",
+    "pay:check": "node scripts/check-real-payment.mjs",
+    "license:keys": "node scripts/generate-keys.mjs",
+    "license:generate": "node scripts/generate-license.mjs"
+  },
+  "devDependencies": {
+    "jszip": "^3.10.1",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^5.4.149",
+    "playwright": "^1.61.1",
+    "vite": "^6.3.5"
+  }
+}
