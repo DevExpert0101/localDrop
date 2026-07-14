@@ -17,11 +17,19 @@ LocalDrop uses **[NOWPayments](https://nowpayments.io)** to accept crypto withou
 
 ---
 
+## Pricing & NOWPayments minimums
+
+Default Pro price: **$2** (`CRYPTO_PRICE_USD`).
+
+NOWPayments has **per-coin minimums** (often ~$2–$20). Before checkout, LocalDrop calls `/v1/min-amount` and **only lists coins that accept your price**. Coins with a higher minimum (often BTC / some USDT pairs) are hidden.
+
+If no coins qualify at $2, raise `CRYPTO_PRICE_USD` slightly or use a provider with lower minimums (BTCPay / Lightning).
+
 ## Customer flow
 
 ```
 1. Upgrade to Pro → Pay with Crypto
-2. Enter email + pick coin (BTC, ETH, USDT…)
+2. Enter email + pick a listed coin (only coins valid at your price)
 3. Send exact amount to the address shown (QR code included)
 4. Blockchain confirms → activation link sent to email
 5. Click link → Pro unlocked on device
@@ -49,7 +57,7 @@ Set environment variables:
 | `NOWPAYMENTS_API_KEY` | From NOWPayments dashboard |
 | `NOWPAYMENTS_IPN_SECRET` | From NOWPayments dashboard |
 | `SITE_URL` | `https://yourdomain.com` |
-| `CRYPTO_PRICE_USD` | `9` (or your price) |
+| `CRYPTO_PRICE_USD` | `2` (default). Keep low for conversion — app filters coins whose NOWPayments minimum is higher |
 | `LICENSE_PRIVATE_KEY` | Contents of `scripts/keys/private.pem` |
 | `ACTIVATION_SECRET` | Random 32+ char string |
 | `RESEND_API_KEY` | For activation emails |

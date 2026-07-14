@@ -7,7 +7,10 @@ const API_BASE =
 
 const FINISHED = new Set(["finished", "confirmed", "sending"]);
 
-/** In-memory paid emails for dev / webhook cache (use Upstash in high-volume prod) */
+/** Prefer low network-fee / low-min coins for a $1–$2 product price */
+const PREFERRED_COINS = ["trx", "ltc", "xmr", "sol", "doge", "btc", "eth", "usdttrc20", "usdterc20"];
+
+/** In-memory paid emails for dev / webhook cache */
 const paidEmails = new Set();
 
 export function markEmailPaid(email) {
@@ -23,6 +26,10 @@ export function orderIdForEmail(email) {
   return `ldpro-${hash}`;
 }
 
+export function getPriceUsd() {
+  return Number(process.env.CRYPTO_PRICE_USD || "2");
+}
+
 function apiKey() {
   return process.env.NOWPAYMENTS_API_KEY || "";
 }
@@ -36,19 +43,55 @@ export function usingRealPayments() {
   return Boolean(apiKey());
 }
 
-export async function createPayment(email, payCurrency = "btc") {
+/**
+ * NOWPayments minimum for paying with `currency` (fiat USD equivalent).
+ * Min depends on coin pair + payout wallet — always check live.
+ */
+export async function getMinAmountUsd(payCurrency) {
+  if (isDevMock()) return 0;
+
+  const key = apiKey();
+  const coin = payCurrency.toLowerCase();
+  const url = new URL(`${API_BASE}/min-amount`);
+  url.searchParams.set("currency_from", coin);
+  url.searchParams.set("currency_to", coin);
+  url.searchParams.set("fiat_equivalent", "usd");
+
+  const res = await fetch(url, { headers: { "x-api-key": key } });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Could not check minimum for ${coin}: ${err}`);
+  }
+
+  const data = await res.json();
+  return Number(data.fiat_equivalent ?? data.min_amount ?? Infinity);
+}
+
+export async function assertPriceMeetsMin(payCurrency, priceUsd = getPriceUsd()) {
+  const minUsd = await getMinAmountUsd(payCurrency);
+  if (priceUsd + 0.001 < minUsd) {
+    throw new Error(
+      `${payCurrency.toUpperCase()} minimum is about $${minUsd.toFixed(2)}. ` +
+        `Our price is $${priceUsd}. Choose another coin, or ask support.`
+    );
+  }
+  return minUsd;
+}
+
+export async function createPayment(email, payCurrency = "trx") {
   const normalized = email.toLowerCase().trim();
   const orderId = orderIdForEmail(normalized);
-  const price = Number(process.env.CRYPTO_PRICE_USD || "9");
+  const price = getPriceUsd();
+  const coin = payCurrency.toLowerCase();
 
   if (isDevMock()) {
     const paymentId = `dev-${Date.now()}`;
     return {
       paymentId,
       orderId,
-      payAddress: "bc1q-dev-mock-address-for-local-testing-only",
-      payAmount: "0.00012",
-      payCurrency: payCurrency.toLowerCase(),
+      payAddress: "dev-mock-address-for-local-testing-only",
+      payAmount: "2.00",
+      payCurrency: coin,
       priceUsd: price,
       dev: true,
       expiresAt: Date.now() + 60 * 60 * 1000,
@@ -57,6 +100,8 @@ export async function createPayment(email, payCurrency = "btc") {
 
   const key = apiKey();
   if (!key) throw new Error("NOWPAYMENTS_API_KEY not configured");
+
+  await assertPriceMeetsMin(coin, price);
 
   const existing = await listPaymentsByOrder(orderId);
   const active = existing.find((p) => ["waiting", "confirming", "sending"].includes(p.payment_status));
@@ -76,7 +121,7 @@ export async function createPayment(email, payCurrency = "btc") {
     body: JSON.stringify({
       price_amount: price,
       price_currency: "usd",
-      pay_currency: payCurrency.toLowerCase(),
+      pay_currency: coin,
       order_id: orderId,
       order_description: `LocalDrop Pro — ${normalized}`,
       ipn_callback_url: `${process.env.SITE_URL}/api/crypto-webhook`,
@@ -167,18 +212,74 @@ export async function hasPaidCryptoOrder(email) {
   return paid;
 }
 
+/**
+ * Currencies that can accept our product price (below NOWPayments min for that coin are excluded).
+ */
 export async function getAvailableCurrencies() {
+  const price = getPriceUsd();
+
   if (isDevMock()) {
-    return ["btc", "eth", "usdttrc20", "ltc", "sol"];
+    return {
+      currencies: ["trx", "ltc", "sol", "btc", "eth"],
+      currencyDetails: [
+        { currency: "trx", minUsd: 0, ok: true },
+        { currency: "ltc", minUsd: 0, ok: true },
+        { currency: "sol", minUsd: 0, ok: true },
+        { currency: "btc", minUsd: 0, ok: true },
+        { currency: "eth", minUsd: 0, ok: true },
+      ],
+      priceUsd: price,
+      warning: null,
+    };
   }
 
   const key = apiKey();
   const res = await fetch(`${API_BASE}/currencies`, { headers: { "x-api-key": key } });
-  if (!res.ok) return ["btc", "eth", "usdttrc20"];
+  if (!res.ok) {
+    return {
+      currencies: ["trx", "ltc"],
+      currencyDetails: [],
+      priceUsd: price,
+      warning: "Could not load currencies from NOWPayments.",
+    };
+  }
+
   const data = await res.json();
-  const preferred = ["btc", "eth", "usdttrc20", "usdterc20", "ltc", "sol", "doge"];
   const all = data.currencies || [];
-  return preferred.filter((c) => all.includes(c)).concat(all.filter((c) => !preferred.includes(c))).slice(0, 12);
+  const candidates = PREFERRED_COINS.filter((c) => all.includes(c));
+
+  const details = [];
+  for (const coin of candidates) {
+    try {
+      const minUsd = await getMinAmountUsd(coin);
+      details.push({
+        currency: coin,
+        minUsd,
+        ok: price + 0.001 >= minUsd,
+      });
+    } catch {
+      details.push({ currency: coin, minUsd: null, ok: false });
+    }
+  }
+
+  const usable = details.filter((d) => d.ok).map((d) => d.currency);
+  let warning = null;
+
+  if (!usable.length) {
+    warning =
+      `No coins currently accept $${price}. NOWPayments minimums are higher for most coins. ` +
+      `Raise CRYPTO_PRICE_USD or use a payment method with lower minimums (e.g. Lightning / BTCPay).`;
+  } else if (usable.length < candidates.length) {
+    const blocked = details.filter((d) => !d.ok).map((d) => d.currency.toUpperCase());
+    warning = `Some coins are hidden because their minimum is above $${price}: ${blocked.join(", ")}.`;
+  }
+
+  return {
+    currencies: usable.length ? usable : [],
+    currencyDetails: details,
+    priceUsd: price,
+    warning,
+  };
 }
 
 export function simulateDevPayment(email) {

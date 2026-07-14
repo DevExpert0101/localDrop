@@ -22,6 +22,7 @@ app.innerHTML = `
 
       <label for="pay-currency">Cryptocurrency</label>
       <select id="pay-currency"></select>
+      <p class="hint" id="currency-warning" hidden></p>
 
       <button type="button" class="btn btn-primary btn-block" id="create-payment-btn" style="margin-top:1rem">
         Generate payment address
@@ -64,16 +65,44 @@ app.innerHTML = `
 async function loadCurrencies() {
   const select = document.getElementById("pay-currency");
   const modeEl = document.getElementById("payment-mode");
+  const warnEl = document.getElementById("currency-warning");
+  const createBtn = document.getElementById("create-payment-btn");
+
   try {
     const res = await fetch(`${API}/api/create-crypto-payment`);
     const data = await res.json();
-    const coins = data.currencies || ["btc", "eth", "usdttrc20"];
-    select.innerHTML = coins
-      .map((c) => `<option value="${c}">${c.toUpperCase()}</option>`)
-      .join("");
+    const coins = data.currencies || [];
+    const details = data.currencyDetails || [];
+
     if (data.priceUsd) {
       document.getElementById("price-label").textContent = `$${data.priceUsd}`;
     }
+
+    if (!coins.length) {
+      select.innerHTML = `<option value="">No coins available at this price</option>`;
+      createBtn.disabled = true;
+      warnEl.hidden = false;
+      warnEl.textContent =
+        data.warning ||
+        "No cryptocurrencies accept this price right now (NOWPayments minimums). Try again later or raise CRYPTO_PRICE_USD.";
+    } else {
+      select.innerHTML = coins
+        .map((c) => {
+          const detail = details.find((d) => d.currency === c);
+          const minLabel =
+            detail?.minUsd != null ? ` (min ~$${Number(detail.minUsd).toFixed(2)})` : "";
+          return `<option value="${c}">${c.toUpperCase()}${minLabel}</option>`;
+        })
+        .join("");
+      createBtn.disabled = false;
+      if (data.warning) {
+        warnEl.hidden = false;
+        warnEl.textContent = data.warning;
+      } else {
+        warnEl.hidden = true;
+      }
+    }
+
     if (data.realPayments) {
       modeEl.hidden = false;
       modeEl.textContent = data.sandbox
@@ -87,9 +116,9 @@ async function loadCurrencies() {
     }
   } catch {
     select.innerHTML = `
-      <option value="btc">BTC</option>
-      <option value="eth">ETH</option>
-      <option value="usdttrc20">USDT (TRC20)</option>
+      <option value="trx">TRX</option>
+      <option value="ltc">LTC</option>
+      <option value="sol">SOL</option>
     `;
   }
 }

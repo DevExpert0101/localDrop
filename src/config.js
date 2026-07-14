@@ -1,6 +1,6 @@
 export const PRO_CONFIG = {
-  priceLabel: "$9",
-  priceUsd: 9,
+  priceLabel: "$2",
+  priceUsd: 2,
   payUrl: "/pay.html",
   supportEmail: import.meta.env.VITE_SUPPORT_EMAIL || "support@localdrop.tools",
   activateUrl: "/activate.html",

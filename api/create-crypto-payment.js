@@ -1,4 +1,4 @@
-import { createPayment, getAvailableCurrencies, usingRealPayments } from "./lib/crypto.js";
+import { createPayment, getAvailableCurrencies, usingRealPayments, getPriceUsd } from "./lib/crypto.js";
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -9,10 +9,10 @@ export default async function handler(req, res) {
 
   if (req.method === "GET") {
     try {
-      const currencies = await getAvailableCurrencies();
+      const availability = await getAvailableCurrencies();
       return res.status(200).json({
-        currencies,
-        priceUsd: Number(process.env.CRYPTO_PRICE_USD || "9"),
+        ...availability,
+        priceUsd: availability.priceUsd ?? getPriceUsd(),
         realPayments: usingRealPayments(),
         sandbox: process.env.NOWPAYMENTS_SANDBOX === "true",
       });
@@ -24,7 +24,7 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   const email = (req.body?.email || "").trim().toLowerCase();
-  const payCurrency = (req.body?.payCurrency || "btc").toLowerCase();
+  const payCurrency = (req.body?.payCurrency || "trx").toLowerCase();
 
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return res.status(400).json({ error: "Enter a valid email address." });
@@ -44,6 +44,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, ...payment });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ error: err.message || "Could not create payment." });
+    return res.status(400).json({ error: err.message || "Could not create payment." });
   }
 }

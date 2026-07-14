@@ -31,7 +31,7 @@ Deploy the `dist/` folder to **Vercel**, **Netlify**, or **GitHub Pages** — fr
 
 ## Free vs Pro
 
-| | Free | Pro ($9 crypto) |
+| | Free | Pro ($2 crypto) |
 |---|------|-------------------|
 | Jobs/day | 3 | Unlimited |
 | Max file size | 10 MB | 100 MB |
